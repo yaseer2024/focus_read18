@@ -73,8 +73,8 @@ class _PdfScreenState extends State<PdfScreen> {
       final pageImage = await page.render(
         width: page.width * 2,
         height: page.height * 2,
-        format: PdfPageImageFormat.jpeg,
-        backgroundColor: darkMode ? '#000000' : '#FFFFFF',
+        format: PdfPageImageFormat.png,
+        backgroundColor: '#FFFFFF',
       );
       await page.close();
 
@@ -98,10 +98,23 @@ class _PdfScreenState extends State<PdfScreen> {
     }
   }
 
+  void _toggleDarkMode() {
+    setState(() => darkMode = !darkMode);
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: darkMode ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
+        systemNavigationBarIconBrightness: darkMode ? Brightness.light : Brightness.dark,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _saveProgress();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     pageController.dispose();
     _pageCache.clear();
     _pdfDocument?.close();
@@ -132,7 +145,6 @@ class _PdfScreenState extends State<PdfScreen> {
                 setState(() => currentPage = page);
                 _saveProgress();
 
-                // Preload next page
                 if (page + 1 < totalPages) {
                   _loadPage(page + 2);
                 }
@@ -145,7 +157,11 @@ class _PdfScreenState extends State<PdfScreen> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Container(
                         color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
-                        child: const Center(child: CircularProgressIndicator()),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: darkMode ? Colors.white : Colors.brown.shade600,
+                          ),
+                        ),
                       );
                     }
 
@@ -156,7 +172,7 @@ class _PdfScreenState extends State<PdfScreen> {
                           child: Icon(
                             Icons.error_outline,
                             size: 48,
-                            color: Colors.grey.shade400,
+                            color: darkMode ? Colors.white54 : Colors.grey.shade400,
                           ),
                         ),
                       );
@@ -164,11 +180,26 @@ class _PdfScreenState extends State<PdfScreen> {
 
                     return Container(
                       color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: InteractiveViewer(
                         minScale: 1.0,
                         maxScale: 4.0,
                         child: Center(
-                          child: Image.memory(
+                          child: darkMode
+                              ? ColorFiltered(
+                            colorFilter: const ColorFilter.matrix([
+                              // Invert and adjust contrast
+                              -0.9, 0, 0, 0, 255,
+                              0, -0.9, 0, 0, 255,
+                              0, 0, -0.9, 0, 255,
+                              0, 0, 0, 1, 0,
+                            ]),
+                            child: Image.memory(
+                              snapshot.data!.bytes,
+                              fit: BoxFit.contain,
+                            ),
+                          )
+                              : Image.memory(
                             snapshot.data!.bytes,
                             fit: BoxFit.contain,
                           ),
@@ -188,13 +219,13 @@ class _PdfScreenState extends State<PdfScreen> {
               left: 0,
               right: 0,
               child: Container(
-                height: 100,
+                height: 120,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.5),
+                      Colors.black.withOpacity(0.7),
                       Colors.transparent,
                     ],
                   ),
@@ -209,18 +240,33 @@ class _PdfScreenState extends State<PdfScreen> {
               left: 16,
               child: SafeArea(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
+                    color: Colors.black.withOpacity(0.75),
                     borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${currentPage + 1} / $totalPages',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.15),
+                      width: 1,
                     ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.menu_book_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${currentPage + 1} / $totalPages',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -234,18 +280,19 @@ class _PdfScreenState extends State<PdfScreen> {
               child: SafeArea(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
+                    color: Colors.black.withOpacity(0.75),
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.15),
+                      width: 1,
+                    ),
                   ),
                   child: IconButton(
                     icon: Icon(
-                      darkMode ? Icons.light_mode : Icons.dark_mode,
-                      color: Colors.white,
+                      darkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                      color: darkMode ? Colors.amber.shade300 : Colors.white,
                     ),
-                    onPressed: () {
-                      setState(() => darkMode = !darkMode);
-                      _pageCache.clear(); // Clear cache to re-render
-                    },
+                    onPressed: _toggleDarkMode,
                   ),
                 ),
               ),
@@ -259,16 +306,40 @@ class _PdfScreenState extends State<PdfScreen> {
               child: SafeArea(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
+                    color: Colors.black.withOpacity(0.75),
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.15),
+                      width: 1,
+                    ),
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
               ),
             ),
+
+          // Bottom Gradient
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
 
           // Progress Bar
           Positioned(
@@ -276,13 +347,23 @@ class _PdfScreenState extends State<PdfScreen> {
             left: 0,
             right: 0,
             child: Container(
-              height: 2,
-              color: Colors.grey.withOpacity(0.2),
+              height: 3,
+              decoration: BoxDecoration(
+                color: darkMode
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.black.withOpacity(0.1),
+              ),
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,
                 widthFactor: totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
                 child: Container(
-                  color: darkMode ? Colors.white : Colors.brown.shade600,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: darkMode
+                          ? [Colors.white, Colors.grey.shade300]
+                          : [Colors.brown.shade700, Colors.brown.shade500],
+                    ),
+                  ),
                 ),
               ),
             ),

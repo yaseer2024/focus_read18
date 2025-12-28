@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>PDF Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            background: #f5efe6;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body.dark-mode {
+            background: #000;
+        }
+
+        #viewerContainer {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .page {
+            position: relative;
+            margin: 12px auto;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        body.dark-mode .page {
+            background: #1a1a1a;
+        }
+
+        canvas {
+            display: block;
+            pointer-events: none;
+        }
+
+        body.dark-mode canvas {
+            filter: invert(0.9) hue-rotate(180deg);
+        }
+
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            line-height: 1.0;
+            pointer-events: auto;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        .textLayer > span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        .textLayer ::selection {
+            background: rgba(255, 235, 59, 0.5);
+        }
+
+        body.dark-mode .textLayer ::selection {
+            background: rgba(255, 235, 59, 0.3);
+        }
+
+        /* Highlight overlay */
+        .highlight {
+            position: absolute;
+            pointer-events: none;
+            mix-blend-mode: multiply;
+            opacity: 0.4;
+        }
+
+        body.dark-mode .highlight {
+            mix-blend-mode: screen;
+            opacity: 0.3;
+        }
+
+        .highlight.yellow { background: #FFEB3B; }
+        .highlight.green { background: #4CAF50; }
+        .highlight.blue { background: #2196F3; }
+        .highlight.pink { background: #E91E63; }
+        .highlight.orange { background: #FF9800; }
+
+        /* Highlight Menu */
+        #highlightMenu {
+            position: fixed;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            padding: 8px;
+            display: none;
+            z-index: 1000;
+            gap: 8px;
+        }
+
+        body.dark-mode #highlightMenu {
+            background: #2a2a2a;
+        }
+
+        .color-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .color-btn:active {
+            transform: scale(0.9);
+        }
+
+        .color-btn.yellow { background: #FFEB3B; }
+        .color-btn.green { background: #4CAF50; }
+        .color-btn.blue { background: #2196F3; }
+        .color-btn.pink { background: #E91E63; }
+        .color-btn.orange { background: #FF9800; }
+
+        #noteBtn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            background: #666;
+            color: white;
+            cursor: pointer;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+<div id="viewerContainer"></div>
+<div id="highlightMenu">
+    <button class="color-btn yellow" data-color="yellow"></button>
+    <button class="color-btn green" data-color="green"></button>
+    <button class="color-btn blue" data-color="blue"></button>
+    <button class="color-btn pink" data-color="pink"></button>
+    <button class="color-btn orange" data-color="orange"></button>
+    <button id="noteBtn">📝</button>
+</div>
+
+<script src="pdf.js"></script>
+<script>
+    (function () {
+        const params = new URLSearchParams(window.location.search);
+        const pdfPath = params.get("file");
+
+        if (!pdfPath) {
+            alert("PDF path missing");
+            return;
+        }
+
+        pdfjsLib.disableRange = true;
+        pdfjsLib.disableStream = true;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.js";
+
+        const container = document.getElementById("viewerContainer");
+        const highlightMenu = document.getElementById("highlightMenu");
+        const SCALE = 1.3;
+
+        let currentSelection = null;
+        let currentPageNum = null;
+        let highlights = {};
+
+        // Load existing highlights from Flutter
+        window.loadHighlights = function(data) {
+            highlights = JSON.parse(data);
+            renderAllHighlights();
+        };
+
+        // Toggle dark mode
+        window.toggleDarkMode = function(isDark) {
+            document.body.classList.toggle('dark-mode', isDark);
+        };
+
+        pdfjsLib.getDocument(pdfPath).promise.then(function (pdf) {
+            for (let i = 1; i <= pdf.numPages; i++) {
+                renderPage(pdf, i);
+            }
+        }).catch(function(error) {
+            console.error("PDF Load Error:", error);
+            alert("Failed to load PDF: " + error.message);
+        });
+
+        function renderPage(pdf, pageNum) {
+            pdf.getPage(pageNum).then(function (page) {
+                const viewport = page.getViewport({ scale: SCALE });
+
+                const pageDiv = document.createElement("div");
+                pageDiv.className = "page";
+                pageDiv.id = "page-" + pageNum;
+                pageDiv.setAttribute("data-page", pageNum);
+                pageDiv.style.width = viewport.width + "px";
+                pageDiv.style.height = viewport.height + "px";
+
+                const canvas = document.createElement("canvas");
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                pageDiv.appendChild(canvas);
+
+                const ctx = canvas.getContext("2d");
+
+                page.render({
+                    canvasContext: ctx,
+                    viewport: viewport
+                }).promise.then(function() {
+                    const textLayer = document.createElement("div");
+                    textLayer.className = "textLayer";
+                    textLayer.style.width = viewport.width + "px";
+                    textLayer.style.height = viewport.height + "px";
+                    pageDiv.appendChild(textLayer);
+
+                    page.getTextContent().then(function (textContent) {
+                        pdfjsLib.renderTextLayer({
+                            textContent: textContent,
+                            container: textLayer,
+                            viewport: viewport,
+                            textDivs: []
+                        });
+                    });
+                });
+
+                container.appendChild(pageDiv);
+            });
+        }
+
+        // Text selection handling
+        document.addEventListener("selectionchange", () => {
+            const selection = window.getSelection();
+            const text = selection.toString().trim();
+
+            if (text.length > 0) {
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+
+                // Find which page the selection is on
+                let pageElement = range.startContainer;
+                while (pageElement && !pageElement.classList.contains('page')) {
+                    pageElement = pageElement.parentElement;
+                }
+
+                if (pageElement) {
+                    currentPageNum = parseInt(pageElement.getAttribute('data-page'));
+                    currentSelection = {
+                        text: text,
+                        pageNum: currentPageNum,
+                        range: range
+                    };
+
+                    // Show highlight menu
+                    highlightMenu.style.display = 'flex';
+                    highlightMenu.style.left = rect.left + 'px';
+                    highlightMenu.style.top = (rect.bottom + 10) + 'px';
+                }
+            } else {
+                setTimeout(() => {
+                    if (!window.getSelection().toString()) {
+                        highlightMenu.style.display = 'none';
+                    }
+                }, 200);
+            }
+        });
+
+        // Color button handlers
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const color = this.getAttribute('data-color');
+                if (currentSelection) {
+                    saveHighlight(currentSelection, color, null);
+                }
+            });
+        });
+
+        // Note button handler
+        document.getElementById('noteBtn').addEventListener('click', function() {
+            if (currentSelection) {
+                // Send to Flutter for note input
+                if (window.FlutterChannel) {
+                    window.FlutterChannel.postMessage(JSON.stringify({
+                        type: 'requestNote',
+                        text: currentSelection.text,
+                        pageNum: currentSelection.pageNum
+                    }));
+                }
+            }
+        });
+
+        function saveHighlight(selection, color, note) {
+            const id = Date.now().toString();
+            const highlight = {
+                id: id,
+                text: selection.text,
+                pageNum: selection.pageNum,
+                color: color,
+                note: note,
+                createdAt: new Date().toISOString()
+            };
+
+            // Store locally
+            if (!highlights[selection.pageNum]) {
+                highlights[selection.pageNum] = [];
+            }
+            highlights[selection.pageNum].push(highlight);
+
+            // Send to Flutter
+            if (window.FlutterChannel) {
+                window.FlutterChannel.postMessage(JSON.stringify({
+                    type: 'saveHighlight',
+                    highlight: highlight
+                }));
+            }
+
+            // Clear selection
+            window.getSelection().removeAllRanges();
+            highlightMenu.style.display = 'none';
+            currentSelection = null;
+
+            // Render highlight overlay
+            renderHighlight(highlight);
+        }
+
+        window.saveHighlightWithNote = function(color, note) {
+            if (currentSelection) {
+                saveHighlight(currentSelection, color, note);
+            }
+        };
+
+        function renderHighlight(highlight) {
+            // This is simplified - real implementation would need coordinates
+            console.log('Highlight saved:', highlight);
+        }
+
+        function renderAllHighlights() {
+            // Render all existing highlights
+            for (let pageNum in highlights) {
+                highlights[pageNum].forEach(h => renderHighlight(h));
+            }
+        }
+
+        // Hide menu on scroll
+        container.addEventListener('scroll', () => {
+            highlightMenu.style.display = 'none';
+        });
+
+    })();
+</script>
+</body>
+</html>
