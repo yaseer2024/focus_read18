@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
+
 import '../models/book.dart';
 import '../storage/book_storage.dart';
+import '../services/reading_streak.dart';
 
 class PdfScreen extends StatefulWidget {
   final Book book;
@@ -33,22 +35,13 @@ class _PdfScreenState extends State<PdfScreen> {
   }
 
   Future<void> _initPdf() async {
-    try {
-      _pdfDocument = await PdfDocument.openFile(widget.book.path);
-      setState(() {
-        totalPages = _pdfDocument!.pagesCount;
-        widget.book.totalPages = totalPages;
-        isLoading = false;
-      });
-      await _saveProgress();
-    } catch (e) {
-      setState(() => isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading PDF: $e')),
-        );
-      }
-    }
+    _pdfDocument = await PdfDocument.openFile(widget.book.path);
+    setState(() {
+      totalPages = _pdfDocument!.pagesCount;
+      widget.book.totalPages = totalPages;
+      isLoading = false;
+    });
+    _saveProgress();
   }
 
   Future<void> _saveProgress() async {
@@ -66,29 +59,17 @@ class _PdfScreenState extends State<PdfScreen> {
       return _pageCache[pageNumber];
     }
 
-    if (_pdfDocument == null) return null;
+    final page = await _pdfDocument!.getPage(pageNumber);
+    final image = await page.render(
+      width: page.width * 2,
+      height: page.height * 2,
+      format: PdfPageImageFormat.png,
+      backgroundColor: '#FFFFFF',
+    );
+    await page.close();
 
-    try {
-      final page = await _pdfDocument!.getPage(pageNumber);
-      final pageImage = await page.render(
-        width: page.width * 2,
-        height: page.height * 2,
-        format: PdfPageImageFormat.png,
-        backgroundColor: '#FFFFFF',
-      );
-      await page.close();
-
-      if (_pageCache.length > 3) {
-        _pageCache.remove(_pageCache.keys.first);
-      }
-      if (pageImage != null) {
-        _pageCache[pageNumber] = pageImage;
-      }
-
-      return pageImage;
-    } catch (e) {
-      return null;
-    }
+    if (image != null) _pageCache[pageNumber] = image;
+    return image;
   }
 
   void _toggleUI() {
@@ -103,9 +84,12 @@ class _PdfScreenState extends State<PdfScreen> {
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: darkMode ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
-        systemNavigationBarIconBrightness: darkMode ? Brightness.light : Brightness.dark,
+        statusBarIconBrightness:
+        darkMode ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor:
+        darkMode ? Colors.black : const Color(0xFFF5EFE6),
+        systemNavigationBarIconBrightness:
+        darkMode ? Brightness.light : Brightness.dark,
       ),
     );
   }
@@ -114,7 +98,6 @@ class _PdfScreenState extends State<PdfScreen> {
   void dispose() {
     _saveProgress();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     pageController.dispose();
     _pageCache.clear();
     _pdfDocument?.close();
@@ -124,9 +107,8 @@ class _PdfScreenState extends State<PdfScreen> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF5EFE6),
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -134,75 +116,47 @@ class _PdfScreenState extends State<PdfScreen> {
       backgroundColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
       body: Stack(
         children: [
-          // PDF Pages (Reel-style)
+          /// PDF pages (REEL STYLE)
           GestureDetector(
             onTap: _toggleUI,
             child: PageView.builder(
               controller: pageController,
               scrollDirection: Axis.vertical,
               physics: const BouncingScrollPhysics(),
+              itemCount: totalPages,
               onPageChanged: (page) {
                 setState(() => currentPage = page);
                 _saveProgress();
-
-                if (page + 1 < totalPages) {
-                  _loadPage(page + 2);
-                }
+                ReadingStreak.markRead(widget.book);
               },
-              itemCount: totalPages,
-              itemBuilder: (context, index) {
+              itemBuilder: (_, index) {
                 return FutureBuilder<PdfPageImage?>(
                   future: _loadPage(index + 1),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container(
-                        color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: darkMode ? Colors.white : Colors.brown.shade600,
-                          ),
-                        ),
-                      );
-                    }
-
-                    if (!snapshot.hasData || snapshot.data == null) {
-                      return Container(
-                        color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
-                        child: Center(
-                          child: Icon(
-                            Icons.error_outline,
-                            size: 48,
-                            color: darkMode ? Colors.white54 : Colors.grey.shade400,
-                          ),
-                        ),
-                      );
+                  builder: (_, snap) {
+                    if (!snap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
                     }
 
                     return Container(
                       color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
                       padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: InteractiveViewer(
-                        minScale: 1.0,
-                        maxScale: 4.0,
-                        child: Center(
-                          child: darkMode
-                              ? ColorFiltered(
-                            colorFilter: const ColorFilter.matrix([
-                              // Invert and adjust contrast
-                              -0.9, 0, 0, 0, 255,
-                              0, -0.9, 0, 0, 255,
-                              0, 0, -0.9, 0, 255,
-                              0, 0, 0, 1, 0,
-                            ]),
-                            child: Image.memory(
-                              snapshot.data!.bytes,
-                              fit: BoxFit.contain,
-                            ),
-                          )
-                              : Image.memory(
-                            snapshot.data!.bytes,
+                      child: Center(
+                        child: darkMode
+                            ? ColorFiltered(
+                          colorFilter: const ColorFilter.matrix([
+                            -0.9, 0, 0, 0, 255,
+                            0, -0.9, 0, 0, 255,
+                            0, 0, -0.9, 0, 255,
+                            0, 0, 0, 1, 0,
+                          ]),
+                          child: Image.memory(
+                            snap.data!.bytes,
                             fit: BoxFit.contain,
                           ),
+                        )
+                            : Image.memory(
+                          snap.data!.bytes,
+                          fit: BoxFit.contain,
                         ),
                       ),
                     );
@@ -212,68 +166,28 @@ class _PdfScreenState extends State<PdfScreen> {
             ),
           ),
 
-          // Top Gradient
-          if (showUI)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 120,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // Page Counter
-          if (showUI)
+          /// TOP UI
+          if (showUI) ...[
             Positioned(
               top: 40,
               left: 16,
               child: SafeArea(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.75),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.15),
-                      width: 1,
-                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.menu_book_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${currentPage + 1} / $totalPages',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '${currentPage + 1} / $totalPages',
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
               ),
             ),
 
-          // Dark Mode Toggle
-          if (showUI)
+            /// DARK / LIGHT TOGGLE 🔥
             Positioned(
               top: 40,
               right: 16,
@@ -282,15 +196,14 @@ class _PdfScreenState extends State<PdfScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.75),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.15),
-                      width: 1,
-                    ),
                   ),
                   child: IconButton(
                     icon: Icon(
-                      darkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                      color: darkMode ? Colors.amber.shade300 : Colors.white,
+                      darkMode
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                      color:
+                      darkMode ? Colors.amber.shade300 : Colors.white,
                     ),
                     onPressed: _toggleDarkMode,
                   ),
@@ -298,8 +211,7 @@ class _PdfScreenState extends State<PdfScreen> {
               ),
             ),
 
-          // Back Button
-          if (showUI)
+            /// BACK BUTTON
             Positioned(
               top: 40,
               left: 70,
@@ -308,62 +220,30 @@ class _PdfScreenState extends State<PdfScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.75),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.15),
-                      width: 1,
-                    ),
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
               ),
             ),
+          ],
 
-          // Bottom Gradient
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 40,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Progress Bar
+          /// PROGRESS BAR
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               height: 3,
-              decoration: BoxDecoration(
-                color: darkMode
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.black.withOpacity(0.1),
-              ),
+              color: Colors.black.withOpacity(0.1),
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,
-                widthFactor: totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
+                widthFactor:
+                totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
                 child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: darkMode
-                          ? [Colors.white, Colors.grey.shade300]
-                          : [Colors.brown.shade700, Colors.brown.shade500],
-                    ),
-                  ),
+                  color: Colors.brown.shade600,
                 ),
               ),
             ),
