@@ -5,12 +5,18 @@ class Book {
   int lastPage;
   int totalPages;
 
+  // 🔥 NEW: streak data
+  int streak;
+  String? lastReadDate;
+
   Book({
     required this.id,
     required this.title,
     required this.path,
     this.lastPage = 0,
     this.totalPages = 0,
+    this.streak = 0,
+    this.lastReadDate,
   });
 
   Map<String, dynamic> toJson() {
@@ -20,6 +26,8 @@ class Book {
       'path': path,
       'lastPage': lastPage,
       'totalPages': totalPages,
+      'streak': streak,
+      'lastReadDate': lastReadDate,
     };
   }
 
@@ -30,6 +38,8 @@ class Book {
       path: json['path'] ?? '',
       lastPage: json['lastPage'] ?? 0,
       totalPages: json['totalPages'] ?? 0,
+      streak: json['streak'] ?? 0,
+      lastReadDate: json['lastReadDate'],
     );
   }
 
