@@ -16,19 +16,24 @@ class PdfScreen extends StatefulWidget {
 
 class _PdfScreenState extends State<PdfScreen> {
   late PageController pageController;
+
   bool darkMode = false;
   bool showUI = true;
-  int currentPage = 0;
-  int totalPages = 0;
   bool isLoading = true;
 
+  int currentPage = 0;
+  int totalPages = 0;
+  int previousPage = 0; // 🔥 NEW
+
   final Map<int, PdfPageImage> _pageCache = {};
+  final Map<int, Future<PdfPageImage?>> _futureCache = {};
   PdfDocument? _pdfDocument;
 
   @override
   void initState() {
     super.initState();
     currentPage = widget.book.lastPage;
+    previousPage = widget.book.lastPage;
     pageController = PageController(initialPage: widget.book.lastPage);
     _initPdf();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -54,45 +59,34 @@ class _PdfScreenState extends State<PdfScreen> {
     }
   }
 
-  Future<PdfPageImage?> _loadPage(int pageNumber) async {
+  Future<PdfPageImage?> _loadPage(int pageNumber) {
     if (_pageCache.containsKey(pageNumber)) {
-      return _pageCache[pageNumber];
+      return Future.value(_pageCache[pageNumber]);
     }
 
-    final page = await _pdfDocument!.getPage(pageNumber);
-    final image = await page.render(
-      width: page.width * 2,
-      height: page.height * 2,
-      format: PdfPageImageFormat.png,
-      backgroundColor: '#FFFFFF',
-    );
-    await page.close();
-
-    if (image != null) _pageCache[pageNumber] = image;
-    return image;
-  }
-
-  void _toggleUI() {
-    setState(() => showUI = !showUI);
-    if (showUI) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (_futureCache.containsKey(pageNumber)) {
+      return _futureCache[pageNumber]!;
     }
+
+    final future = () async {
+      final page = await _pdfDocument!.getPage(pageNumber);
+      final image = await page.render(
+        width: page.width * 2,
+        height: page.height * 2,
+        format: PdfPageImageFormat.png,
+        backgroundColor: '#FFFFFF',
+      );
+      await page.close();
+      if (image != null) _pageCache[pageNumber] = image;
+      return image;
+    }();
+
+    _futureCache[pageNumber] = future;
+    return future;
   }
 
-  void _toggleDarkMode() {
-    setState(() => darkMode = !darkMode);
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness:
-        darkMode ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor:
-        darkMode ? Colors.black : const Color(0xFFF5EFE6),
-        systemNavigationBarIconBrightness:
-        darkMode ? Brightness.light : Brightness.dark,
-      ),
-    );
-  }
+  void _toggleUI() => setState(() => showUI = !showUI);
+  void _toggleDarkMode() => setState(() => darkMode = !darkMode);
 
   @override
   void dispose() {
@@ -100,6 +94,7 @@ class _PdfScreenState extends State<PdfScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     pageController.dispose();
     _pageCache.clear();
+    _futureCache.clear();
     _pdfDocument?.close();
     super.dispose();
   }
@@ -116,18 +111,24 @@ class _PdfScreenState extends State<PdfScreen> {
       backgroundColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
       body: Stack(
         children: [
-          /// PDF pages (REEL STYLE)
-          GestureDetector(
-            onTap: _toggleUI,
+          Listener(
+            onPointerDown: (_) => _toggleUI(),
             child: PageView.builder(
               controller: pageController,
               scrollDirection: Axis.vertical,
               physics: const BouncingScrollPhysics(),
               itemCount: totalPages,
-              onPageChanged: (page) {
+              onPageChanged: (page) async {
+                HapticFeedback.selectionClick();
+
+                // 🔥 ONLY COUNT IF MOVING FORWARD
+                if (page > previousPage) {
+                  await ReadingStreak.markRead(widget.book);
+                }
+
+                previousPage = page;
                 setState(() => currentPage = page);
-                _saveProgress();
-                ReadingStreak.markRead(widget.book);
+                await _saveProgress();
               },
               itemBuilder: (_, index) {
                 return FutureBuilder<PdfPageImage?>(
@@ -144,20 +145,14 @@ class _PdfScreenState extends State<PdfScreen> {
                         child: darkMode
                             ? ColorFiltered(
                           colorFilter: const ColorFilter.matrix([
-                            -0.9, 0, 0, 0, 255,
-                            0, -0.9, 0, 0, 255,
-                            0, 0, -0.9, 0, 255,
+                            -1, 0, 0, 0, 255,
+                            0, -1, 0, 0, 255,
+                            0, 0, -1, 0, 255,
                             0, 0, 0, 1, 0,
                           ]),
-                          child: Image.memory(
-                            snap.data!.bytes,
-                            fit: BoxFit.contain,
-                          ),
+                          child: Image.memory(snap.data!.bytes),
                         )
-                            : Image.memory(
-                          snap.data!.bytes,
-                          fit: BoxFit.contain,
-                        ),
+                            : Image.memory(snap.data!.bytes),
                       ),
                     );
                   },
@@ -166,89 +161,68 @@ class _PdfScreenState extends State<PdfScreen> {
             ),
           ),
 
-          /// TOP UI
-          if (showUI) ...[
+          if (showUI)
             Positioned(
               top: 40,
               left: 16,
-              child: SafeArea(
-                child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.75),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${currentPage + 1} / $totalPages',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-
-            /// DARK / LIGHT TOGGLE 🔥
-            Positioned(
-              top: 40,
               right: 16,
               child: SafeArea(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.75),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: Icon(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _icon(Icons.arrow_back,
+                            () => Navigator.pop(context)),
+                    _pill('${currentPage + 1} / $totalPages'),
+                    _icon(
                       darkMode
                           ? Icons.light_mode_rounded
                           : Icons.dark_mode_rounded,
-                      color:
-                      darkMode ? Colors.amber.shade300 : Colors.white,
+                      _toggleDarkMode,
+                      color: darkMode
+                          ? Colors.amber.shade300
+                          : Colors.white,
                     ),
-                    onPressed: _toggleDarkMode,
-                  ),
+                  ],
                 ),
               ),
             ),
 
-            /// BACK BUTTON
-            Positioned(
-              top: 40,
-              left: 70,
-              child: SafeArea(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.75),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ),
-            ),
-          ],
-
-          /// PROGRESS BAR
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              height: 3,
-              color: Colors.black.withOpacity(0.1),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor:
-                totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
-                child: Container(
-                  color: Colors.brown.shade600,
-                ),
-              ),
+            child: FractionallySizedBox(
+              widthFactor:
+              totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
+              child: Container(height: 3, color: Colors.brown.shade600),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _pill(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(text, style: const TextStyle(color: Colors.white)),
+    );
+  }
+
+  Widget _icon(IconData icon, VoidCallback onTap,
+      {Color color = Colors.white}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.75),
+        shape: BoxShape.circle,
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: color),
+        onPressed: onTap,
       ),
     );
   }

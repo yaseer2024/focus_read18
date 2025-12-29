@@ -62,6 +62,31 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadBooks();
   }
 
+  Future<void> _confirmDelete(Book book) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Book'),
+        content: Text('Delete "${book.title}" permanently?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await BookStorage.removeBook(book.id);
+      await _loadBooks();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -73,7 +98,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5EFE6),
       appBar: AppBar(
-        title: const Text('Your Library', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Your Library',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: const Color(0xFFF5EFE6),
         elevation: 0,
       ),
@@ -81,7 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: Text('No books yet'))
           : GridView.builder(
         padding: const EdgeInsets.all(20),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate:
+        const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           childAspectRatio: 0.6,
           crossAxisSpacing: 16,
@@ -91,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (_, i) {
           final book = books[i];
           return GestureDetector(
+            onLongPress: () => _confirmDelete(book),
             onTap: () async {
               await Navigator.push(
                 context,
@@ -107,7 +137,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 130,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.brown.shade600, Colors.brown.shade400],
+                      colors: [
+                        Colors.brown.shade600,
+                        Colors.brown.shade400
+                      ],
                     ),
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
@@ -121,48 +154,67 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Stack(
                     children: [
                       const Center(
-                        child: Icon(Icons.menu_book, color: Colors.white, size: 60),
+                        child: Icon(
+                          Icons.menu_book,
+                          color: Colors.white,
+                          size: 60,
+                        ),
                       ),
 
-                      // 🔥 STREAK BADGE (PER BOOK)
-                      if (book.streak > 0)
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade600,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.local_fire_department,
-                                    size: 14, color: Colors.white),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${book.streak}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                      /// 🔥 STREAK BADGE (ALWAYS VISIBLE)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: book.streak > 0
+                                ? Colors.orange.shade600
+                                : Colors.black.withOpacity(0.25),
+                            borderRadius:
+                            BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.local_fire_department,
+                                size: 14,
+                                color: book.streak > 0
+                                    ? Colors.white
+                                    : Colors.white
+                                    .withOpacity(0.6),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${book.streak}',
+                                style: TextStyle(
+                                  color: book.streak > 0
+                                      ? Colors.white
+                                      : Colors.white
+                                      .withOpacity(0.6),
+                                  fontWeight: FontWeight.bold,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
 
+                      /// 📊 PROGRESS BAR
                       if (book.totalPages > 0)
                         Positioned(
                           bottom: 0,
                           left: 0,
                           right: 0,
                           child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
+                            alignment:
+                            Alignment.centerLeft,
                             widthFactor: book.progress,
                             child: Container(
                               height: 4,
-                              color: Colors.amber.shade300,
+                              color:
+                              Colors.amber.shade300,
                             ),
                           ),
                         ),
@@ -175,7 +227,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
