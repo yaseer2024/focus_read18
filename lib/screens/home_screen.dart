@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../storage/book_storage.dart';
+import '../storage/reading_time_storage.dart';
 import 'pdf_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -87,6 +88,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// 🔥 FORMAT MINUTES → 1h 20m
+  String _formatMinutes(int minutes) {
+    if (minutes <= 0) return '0m';
+    if (minutes < 60) return '${minutes}m';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}m';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -112,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
         gridDelegate:
         const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.6,
+          childAspectRatio: 0.58,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -132,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             child: Column(
               children: [
+                // 📘 BOOK COVER
                 Container(
                   height: 180,
                   width: 130,
@@ -161,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                      /// 🔥 STREAK BADGE (ALWAYS VISIBLE)
+                      /// 🔥 STREAK BADGE
                       Positioned(
                         top: 8,
                         right: 8,
@@ -180,19 +191,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               Icon(
                                 Icons.local_fire_department,
                                 size: 14,
-                                color: book.streak > 0
-                                    ? Colors.white
-                                    : Colors.white
-                                    .withOpacity(0.6),
+                                color: Colors.white.withOpacity(
+                                    book.streak > 0 ? 1 : 0.6),
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 '${book.streak}',
                                 style: TextStyle(
-                                  color: book.streak > 0
-                                      ? Colors.white
-                                      : Colors.white
-                                      .withOpacity(0.6),
+                                  color: Colors.white.withOpacity(
+                                      book.streak > 0 ? 1 : 0.6),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -221,7 +228,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 10),
+
+                // 📖 BOOK TITLE
                 Text(
                   book.title,
                   maxLines: 2,
@@ -230,6 +240,58 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+
+                const SizedBox(height: 6),
+
+                // ⏱ PREMIUM READING TIME CAPSULE
+                FutureBuilder<List<int>>(
+                  future: Future.wait([
+                    ReadingTimeStorage.getTodayMinutes(book.id),
+                    ReadingTimeStorage.getTotalMinutes(book.id),
+                  ]),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox();
+                    }
+
+                    final today = snapshot.data![0];
+                    final total = snapshot.data![1];
+
+                    if (today == 0 && total == 0) {
+                      return const SizedBox();
+                    }
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.08),
+                        borderRadius:
+                        BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.timer,
+                            size: 12,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_formatMinutes(today)} · ${_formatMinutes(total)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                              FontWeight.w500,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

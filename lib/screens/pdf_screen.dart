@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
@@ -5,6 +6,7 @@ import 'package:pdfx/pdfx.dart';
 import '../models/book.dart';
 import '../storage/book_storage.dart';
 import '../services/reading_streak.dart';
+import '../storage/reading_time_storage.dart';
 
 class PdfScreen extends StatefulWidget {
   final Book book;
@@ -14,7 +16,8 @@ class PdfScreen extends StatefulWidget {
   State<PdfScreen> createState() => _PdfScreenState();
 }
 
-class _PdfScreenState extends State<PdfScreen> {
+class _PdfScreenState extends State<PdfScreen>
+    with WidgetsBindingObserver {
   late PageController pageController;
 
   bool darkMode = false;
@@ -23,20 +26,40 @@ class _PdfScreenState extends State<PdfScreen> {
 
   int currentPage = 0;
   int totalPages = 0;
-  int previousPage = 0; // 🔥 NEW
+  int previousPage = 0;
 
   final Map<int, PdfPageImage> _pageCache = {};
   final Map<int, Future<PdfPageImage?>> _futureCache = {};
   PdfDocument? _pdfDocument;
 
+  // 🔥 READING TIME
+  final Stopwatch _sessionWatch = Stopwatch();
+
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+
     currentPage = widget.book.lastPage;
     previousPage = widget.book.lastPage;
     pageController = PageController(initialPage: widget.book.lastPage);
+
     _initPdf();
+
+    _sessionWatch.start(); // 🔥 START SESSION TIMER
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _sessionWatch.stop(); // 🔥 pause
+    } else if (state == AppLifecycleState.resumed) {
+      _sessionWatch.start(); // 🔥 resume
+    }
   }
 
   Future<void> _initPdf() async {
@@ -88,14 +111,30 @@ class _PdfScreenState extends State<PdfScreen> {
   void _toggleUI() => setState(() => showUI = !showUI);
   void _toggleDarkMode() => setState(() => darkMode = !darkMode);
 
+  Future<void> _saveReadingTime() async {
+    _sessionWatch.stop();
+    final minutes = _sessionWatch.elapsed.inMinutes;
+    if (minutes > 0) {
+      await ReadingTimeStorage.addMinutes(
+        widget.book.id,
+        minutes,
+      );
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
     _saveProgress();
+    _saveReadingTime(); // 🔥 SAVE SESSION TIME
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     pageController.dispose();
     _pageCache.clear();
     _futureCache.clear();
     _pdfDocument?.close();
+
     super.dispose();
   }
 
@@ -121,7 +160,6 @@ class _PdfScreenState extends State<PdfScreen> {
               onPageChanged: (page) async {
                 HapticFeedback.selectionClick();
 
-                // 🔥 ONLY COUNT IF MOVING FORWARD
                 if (page > previousPage) {
                   await ReadingStreak.markRead(widget.book);
                 }
@@ -135,22 +173,28 @@ class _PdfScreenState extends State<PdfScreen> {
                   future: _loadPage(index + 1),
                   builder: (_, snap) {
                     if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const Center(
+                          child: CircularProgressIndicator());
                     }
 
                     return Container(
-                      color: darkMode ? Colors.black : const Color(0xFFF5EFE6),
-                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      color: darkMode
+                          ? Colors.black
+                          : const Color(0xFFF5EFE6),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
                         child: darkMode
                             ? ColorFiltered(
-                          colorFilter: const ColorFilter.matrix([
+                          colorFilter:
+                          const ColorFilter.matrix([
                             -1, 0, 0, 0, 255,
                             0, -1, 0, 0, 255,
                             0, 0, -1, 0, 255,
                             0, 0, 0, 1, 0,
                           ]),
-                          child: Image.memory(snap.data!.bytes),
+                          child:
+                          Image.memory(snap.data!.bytes),
                         )
                             : Image.memory(snap.data!.bytes),
                       ),
@@ -168,7 +212,8 @@ class _PdfScreenState extends State<PdfScreen> {
               right: 16,
               child: SafeArea(
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
                   children: [
                     _icon(Icons.arrow_back,
                             () => Navigator.pop(context)),
@@ -192,9 +237,13 @@ class _PdfScreenState extends State<PdfScreen> {
             left: 0,
             right: 0,
             child: FractionallySizedBox(
-              widthFactor:
-              totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
-              child: Container(height: 3, color: Colors.brown.shade600),
+              widthFactor: totalPages == 0
+                  ? 0
+                  : (currentPage + 1) / totalPages,
+              child: Container(
+                height: 3,
+                color: Colors.brown.shade600,
+              ),
             ),
           ),
         ],
@@ -204,12 +253,14 @@ class _PdfScreenState extends State<PdfScreen> {
 
   Widget _pill(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding:
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.75),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(text, style: const TextStyle(color: Colors.white)),
+      child: Text(text,
+          style: const TextStyle(color: Colors.white)),
     );
   }
 
