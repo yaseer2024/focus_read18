@@ -5,8 +5,8 @@ import 'package:pdfx/pdfx.dart';
 
 import '../models/book.dart';
 import '../storage/book_storage.dart';
-import '../services/reading_streak.dart';
 import '../storage/reading_time_storage.dart';
+import '../services/reading_streak.dart';
 
 class PdfScreen extends StatefulWidget {
   final Book book;
@@ -16,50 +16,37 @@ class PdfScreen extends StatefulWidget {
   State<PdfScreen> createState() => _PdfScreenState();
 }
 
-class _PdfScreenState extends State<PdfScreen>
-    with WidgetsBindingObserver {
+class _PdfScreenState extends State<PdfScreen> {
   late PageController pageController;
 
   bool darkMode = false;
-  bool showUI = true;
+  bool showUI = false; // 👈 default hidden (focus mode)
   bool isLoading = true;
 
   int currentPage = 0;
   int totalPages = 0;
   int previousPage = 0;
 
+  DateTime? sessionStart; // ⏱️ reading time
+
   final Map<int, PdfPageImage> _pageCache = {};
   final Map<int, Future<PdfPageImage?>> _futureCache = {};
   PdfDocument? _pdfDocument;
 
-  // 🔥 READING TIME
-  final Stopwatch _sessionWatch = Stopwatch();
+  Timer? _uiTimer;
 
   @override
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addObserver(this);
-
     currentPage = widget.book.lastPage;
     previousPage = widget.book.lastPage;
     pageController = PageController(initialPage: widget.book.lastPage);
 
+    sessionStart = DateTime.now(); // ⏱️ start session
     _initPdf();
 
-    _sessionWatch.start(); // 🔥 START SESSION TIMER
-
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      _sessionWatch.stop(); // 🔥 pause
-    } else if (state == AppLifecycleState.resumed) {
-      _sessionWatch.start(); // 🔥 resume
-    }
   }
 
   Future<void> _initPdf() async {
@@ -108,32 +95,37 @@ class _PdfScreenState extends State<PdfScreen>
     return future;
   }
 
-  void _toggleUI() => setState(() => showUI = !showUI);
-  void _toggleDarkMode() => setState(() => darkMode = !darkMode);
-
-  Future<void> _saveReadingTime() async {
-    _sessionWatch.stop();
-    final minutes = _sessionWatch.elapsed.inMinutes;
-    if (minutes > 0) {
-      await ReadingTimeStorage.addMinutes(
-        widget.book.id,
-        minutes,
-      );
-    }
+  /// 👆 Double tap → minimal UI for 3s
+  void _showMinimalUI() {
+    setState(() => showUI = true);
+    _uiTimer?.cancel();
+    _uiTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => showUI = false);
+    });
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-
+  void dispose() async {
     _saveProgress();
-    _saveReadingTime(); // 🔥 SAVE SESSION TIME
+
+    // ⏱️ Save reading time
+    if (sessionStart != null) {
+      final minutes =
+          DateTime.now().difference(sessionStart!).inMinutes;
+      if (minutes > 0) {
+        await ReadingTimeStorage.addMinutes(
+          widget.book.id,
+          minutes,
+        );
+      }
+    }
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     pageController.dispose();
     _pageCache.clear();
     _futureCache.clear();
     _pdfDocument?.close();
+    _uiTimer?.cancel();
 
     super.dispose();
   }
@@ -150,8 +142,9 @@ class _PdfScreenState extends State<PdfScreen>
       backgroundColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
       body: Stack(
         children: [
-          Listener(
-            onPointerDown: (_) => _toggleUI(),
+          /// 📖 REEL-LIKE READER
+          GestureDetector(
+            onDoubleTap: _showMinimalUI,
             child: PageView.builder(
               controller: pageController,
               scrollDirection: Axis.vertical,
@@ -160,6 +153,7 @@ class _PdfScreenState extends State<PdfScreen>
               onPageChanged: (page) async {
                 HapticFeedback.selectionClick();
 
+                // 🔥 streak only when moving forward
                 if (page > previousPage) {
                   await ReadingStreak.markRead(widget.book);
                 }
@@ -205,6 +199,7 @@ class _PdfScreenState extends State<PdfScreen>
             ),
           ),
 
+          /// 🧊 MINIMAL OVERLAY (DOUBLE TAP ONLY)
           if (showUI)
             Positioned(
               top: 40,
@@ -220,18 +215,16 @@ class _PdfScreenState extends State<PdfScreen>
                     _pill('${currentPage + 1} / $totalPages'),
                     _icon(
                       darkMode
-                          ? Icons.light_mode_rounded
-                          : Icons.dark_mode_rounded,
-                      _toggleDarkMode,
-                      color: darkMode
-                          ? Colors.amber.shade300
-                          : Colors.white,
+                          ? Icons.light_mode
+                          : Icons.dark_mode,
+                          () => setState(() => darkMode = !darkMode),
                     ),
                   ],
                 ),
               ),
             ),
 
+          /// 📊 PROGRESS BAR
           Positioned(
             bottom: 0,
             left: 0,
@@ -259,20 +252,19 @@ class _PdfScreenState extends State<PdfScreen>
         color: Colors.black.withOpacity(0.75),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(text,
-          style: const TextStyle(color: Colors.white)),
+      child:
+      Text(text, style: const TextStyle(color: Colors.white)),
     );
   }
 
-  Widget _icon(IconData icon, VoidCallback onTap,
-      {Color color = Colors.white}) {
+  Widget _icon(IconData icon, VoidCallback onTap) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.75),
         shape: BoxShape.circle,
       ),
       child: IconButton(
-        icon: Icon(icon, color: color),
+        icon: Icon(icon, color: Colors.white),
         onPressed: onTap,
       ),
     );
