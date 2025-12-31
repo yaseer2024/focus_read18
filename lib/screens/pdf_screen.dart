@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,14 +20,14 @@ class _PdfScreenState extends State<PdfScreen> {
   late PageController pageController;
 
   bool darkMode = false;
-  bool showUI = false; // 👈 default hidden (focus mode)
+  bool showUI = false;
   bool isLoading = true;
 
   int currentPage = 0;
   int totalPages = 0;
   int previousPage = 0;
 
-  DateTime? sessionStart; // ⏱️ reading time
+  DateTime? sessionStart;
 
   final Map<int, PdfPageImage> _pageCache = {};
   final Map<int, Future<PdfPageImage?>> _futureCache = {};
@@ -42,9 +41,9 @@ class _PdfScreenState extends State<PdfScreen> {
 
     currentPage = widget.book.lastPage;
     previousPage = widget.book.lastPage;
-    pageController = PageController(initialPage: widget.book.lastPage);
+    pageController = PageController(initialPage: currentPage);
 
-    sessionStart = DateTime.now(); // ⏱️ start session
+    sessionStart = DateTime.now();
     _initPdf();
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -52,12 +51,17 @@ class _PdfScreenState extends State<PdfScreen> {
 
   Future<void> _initPdf() async {
     _pdfDocument = await PdfDocument.openFile(widget.book.path);
-    setState(() {
-      totalPages = _pdfDocument!.pagesCount;
-      widget.book.totalPages = totalPages;
-      isLoading = false;
-    });
-    _saveProgress();
+    totalPages = _pdfDocument!.pagesCount;
+
+    // 🔥 PERSIST TOTAL PAGES (SERVER + LOCAL SAFE)
+    final books = await BookStorage.load();
+    final index = books.indexWhere((b) => b.id == widget.book.id);
+    if (index != -1) {
+      books[index].totalPages = totalPages;
+      await BookStorage.save(books);
+    }
+
+    setState(() => isLoading = false);
   }
 
   Future<void> _saveProgress() async {
@@ -96,7 +100,6 @@ class _PdfScreenState extends State<PdfScreen> {
     return future;
   }
 
-  /// 👆 Double tap → minimal UI for 3s
   void _showMinimalUI() {
     setState(() => showUI = true);
     _uiTimer?.cancel();
@@ -107,9 +110,8 @@ class _PdfScreenState extends State<PdfScreen> {
 
   @override
   void dispose() async {
-    _saveProgress();
+    await _saveProgress();
 
-    // ⏱️ Save reading time
     if (sessionStart != null) {
       final minutes =
           DateTime.now().difference(sessionStart!).inMinutes;
@@ -143,7 +145,6 @@ class _PdfScreenState extends State<PdfScreen> {
       backgroundColor: darkMode ? Colors.black : const Color(0xFFF5EFE6),
       body: Stack(
         children: [
-          /// 📖 REEL-LIKE READER
           GestureDetector(
             onDoubleTap: _showMinimalUI,
             child: PageView.builder(
@@ -154,7 +155,6 @@ class _PdfScreenState extends State<PdfScreen> {
               onPageChanged: (page) async {
                 HapticFeedback.selectionClick();
 
-                // 🔥 streak only when moving forward
                 if (page > previousPage) {
                   await ReadingStreak.markRead(widget.book);
                 }
@@ -169,15 +169,15 @@ class _PdfScreenState extends State<PdfScreen> {
                   builder: (_, snap) {
                     if (!snap.hasData) {
                       return const Center(
-                          child: CircularProgressIndicator());
+                        child: CircularProgressIndicator(),
+                      );
                     }
 
                     return Container(
                       color: darkMode
                           ? Colors.black
                           : const Color(0xFFF5EFE6),
-                      padding:
-                      const EdgeInsets.symmetric(vertical: 20),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
                         child: darkMode
                             ? ColorFiltered(
@@ -200,7 +200,6 @@ class _PdfScreenState extends State<PdfScreen> {
             ),
           ),
 
-          /// 🧊 MINIMAL OVERLAY (DOUBLE TAP ONLY)
           if (showUI)
             Positioned(
               top: 40,
@@ -225,15 +224,13 @@ class _PdfScreenState extends State<PdfScreen> {
               ),
             ),
 
-          /// 📊 PROGRESS BAR
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: FractionallySizedBox(
-              widthFactor: totalPages == 0
-                  ? 0
-                  : (currentPage + 1) / totalPages,
+              widthFactor:
+              totalPages == 0 ? 0 : (currentPage + 1) / totalPages,
               child: Container(
                 height: 3,
                 color: Colors.brown.shade600,
@@ -253,8 +250,8 @@ class _PdfScreenState extends State<PdfScreen> {
         color: Colors.black.withOpacity(0.75),
         borderRadius: BorderRadius.circular(20),
       ),
-      child:
-      Text(text, style: const TextStyle(color: Colors.white)),
+      child: Text(text,
+          style: const TextStyle(color: Colors.white)),
     );
   }
 
