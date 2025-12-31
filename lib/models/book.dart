@@ -1,13 +1,17 @@
 class Book {
   final String id;
   final String title;
-  final String path;
+  final String path; // local file path (even for server books after download)
+
   int lastPage;
   int totalPages;
 
-  // 🔥 NEW: streak data
+  // 🔥 Reading streak
   int streak;
   String? lastReadDate;
+
+  // 🌐 NEW: remote or local
+  bool isRemote;
 
   Book({
     required this.id,
@@ -17,6 +21,7 @@ class Book {
     this.totalPages = 0,
     this.streak = 0,
     this.lastReadDate,
+    this.isRemote = false, // 👈 default = LOCAL (CORE SAFE)
   });
 
   Map<String, dynamic> toJson() {
@@ -28,6 +33,7 @@ class Book {
       'totalPages': totalPages,
       'streak': streak,
       'lastReadDate': lastReadDate,
+      'isRemote': isRemote,
     };
   }
 
@@ -40,6 +46,7 @@ class Book {
       totalPages: json['totalPages'] ?? 0,
       streak: json['streak'] ?? 0,
       lastReadDate: json['lastReadDate'],
+      isRemote: json['isRemote'] ?? false, // 👈 backward compatible
     );
   }
 
