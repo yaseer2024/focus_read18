@@ -19,59 +19,89 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadBooks();
   }
 
-  Future<void> _load() async {
-    final data = await FreeBooksService.fetchBooks();
-    setState(() {
-      serverBooks = data;
-      loading = false;
-    });
-  }
+  /// 📡 Load books dynamically from server
+  Future<void> _loadBooks() async {
+    try {
+      final data = await FreeBooksService.fetchBooks();
+      if (!mounted) return;
 
-  Future<void> openBook(Map<String, dynamic> data) async {
-    // ⬇️ Download
-    final Book downloaded = await FreeBooksService.downloadBook(data);
-
-    // 💾 Save or update in storage
-    final books = await BookStorage.load();
-    final index = books.indexWhere((b) => b.id == downloaded.id);
-
-    if (index == -1) {
-      books.add(downloaded);
+      setState(() {
+        serverBooks = data;
+        loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => loading = false);
     }
-
-    await BookStorage.save(books);
-
-    // 🔄 RELOAD updated book before opening
-    final refreshedBooks = await BookStorage.load();
-    final book = refreshedBooks.firstWhere((b) => b.id == downloaded.id);
-
-    // 📖 Open
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PdfScreen(book: book),
-      ),
-    );
   }
 
+  /// ⬇️ Download → save → open
+  Future<void> _openBook(Map<String, dynamic> data) async {
+    try {
+      final Book downloaded = await FreeBooksService.downloadBook(data);
+
+      final books = await BookStorage.load();
+      final exists = books.any((b) => b.id == downloaded.id);
+
+      if (!exists) {
+        books.add(downloaded);
+        await BookStorage.save(books);
+      }
+
+      final freshBooks = await BookStorage.load();
+      final book =
+      freshBooks.firstWhere((b) => b.id == downloaded.id);
+
+      if (!mounted) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PdfScreen(book: book),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to open book'),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Free Books')),
+      appBar: AppBar(
+        title: const Text('Free Books'),
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
+          : serverBooks.isEmpty
+          ? const Center(
+        child: Text(
+          'No free books available',
+          style: TextStyle(fontSize: 16),
+        ),
+      )
+          : ListView.separated(
         itemCount: serverBooks.length,
+        separatorBuilder: (_, __) =>
+        const Divider(height: 1),
         itemBuilder: (_, i) {
-          final b = serverBooks[i];
+          final book = serverBooks[i];
+
           return ListTile(
-            leading: const Icon(Icons.cloud_download),
-            title: Text(b['title']),
-            onTap: () => openBook(b),
+            leading:
+            const Icon(Icons.cloud_download_outlined),
+            title: Text(book['title'] ?? 'Untitled'),
+            trailing:
+            const Icon(Icons.chevron_right),
+            onTap: () => _openBook(book),
           );
         },
       ),
