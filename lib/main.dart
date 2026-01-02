@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/home_screen.dart';
 
-void main() {
+import 'screens/home_screen.dart';
+import 'services/api_config.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await ApiConfig.load(); // 🔥 LOAD SERVER CONFIG FIRST
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
   runApp(const FocusReadApp());
 }
 

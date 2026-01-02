@@ -5,12 +5,18 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
+import 'api_config.dart';
 
 class FreeBooksService {
-  // 🔁 Server base URL (LAN IP)
-  static const String baseUrl = 'http://192.168.1.14:3000';
 
-  /// 📡 Fetch free books list from server
+  static String get baseUrl {
+    if (ApiConfig.baseUrl == null) {
+      throw Exception('API Base URL not loaded');
+    }
+    return ApiConfig.baseUrl!;
+  }
+
+  /// 📡 Fetch free books list
   static Future<List<Map<String, dynamic>>> fetchBooks() async {
     try {
       final res = await http
@@ -23,17 +29,15 @@ class FreeBooksService {
 
       final List data = jsonDecode(res.body);
       return data.cast<Map<String, dynamic>>();
-    } catch (e) {
-      // 👈 NEVER freeze UI
+    } catch (_) {
       return [];
     }
   }
 
-  /// ⬇️ Download PDF from server → save locally → return Book
+  /// ⬇️ Download PDF → save locally
   static Future<Book> downloadBook(Map<String, dynamic> data) async {
-    // ✅ BACKEND SENDS: { id, title }
     final String fileName = data['id'];
-    final String url = '$baseUrl/uploads/free_pdfs/$fileName';
+    final String url = '$baseUrl/free_pdfs/$fileName';
 
     final res = await http.get(Uri.parse(url));
 
@@ -41,16 +45,14 @@ class FreeBooksService {
       throw Exception('Failed to download PDF');
     }
 
-    // 📂 Save to app local storage
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(res.bodyBytes);
 
-    // 📘 Return LOCAL book (core-safe)
     return Book(
-      id: fileName, // 🔑 stable ID (same as server)
+      id: fileName,
       title: data['title'] ?? 'Untitled',
-      path: file.path, // 🔥 local file path
+      path: file.path,
       isRemote: true,
     );
   }
