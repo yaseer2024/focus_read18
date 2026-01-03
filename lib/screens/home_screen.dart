@@ -33,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// ▶ MOST READ BOOK = CONTINUE READING
   Book? _getContinueReadingBook() {
     final readingBooks = books.where((b) => b.lastPage > 0).toList();
     if (readingBooks.isEmpty) return null;
@@ -113,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
-          /// 🎁 FREE BOOKS
           _FreeBooksHeroCard(
             onTap: () async {
               await Navigator.push(
@@ -126,7 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
 
-          /// ▶ CONTINUE READING (PREMIUM COLOR)
           if (continueBook != null)
             _ContinueReadingCard(
               book: continueBook,
@@ -141,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
 
-          /// 📚 LIBRARY
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
@@ -182,7 +178,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// 🎁 FREE BOOKS CARD
+/* ---------------- FREE BOOKS ---------------- */
+
 class _FreeBooksHeroCard extends StatelessWidget {
   final VoidCallback onTap;
   const _FreeBooksHeroCard({required this.onTap});
@@ -225,7 +222,8 @@ class _FreeBooksHeroCard extends StatelessWidget {
   }
 }
 
-/// ▶ CONTINUE READING (SEPARATE PREMIUM)
+/* ---------------- CONTINUE READING ---------------- */
+
 class _ContinueReadingCard extends StatelessWidget {
   final Book book;
   final VoidCallback onTap;
@@ -284,8 +282,9 @@ class _ContinueReadingCard extends StatelessWidget {
   }
 }
 
-/// 📘 BOOK CARD (WITH STREAK BADGE)
-class _BookCard extends StatelessWidget {
+/* ---------------- BOOK CARD (STREAK POWERED) ---------------- */
+
+class _BookCard extends StatefulWidget {
   final Book book;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -297,94 +296,156 @@ class _BookCard extends StatelessWidget {
   });
 
   @override
+  State<_BookCard> createState() => _BookCardState();
+}
+
+class _BookCardState extends State<_BookCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  LinearGradient _streakGradient(int streak) {
+    if (streak >= 7) {
+      return const LinearGradient(
+        colors: [Color(0xFFDC2626), Color(0xFFFB7185)],
+      );
+    } else if (streak >= 4) {
+      return const LinearGradient(
+        colors: [Color(0xFFF59E0B), Color(0xFFFBBF24)],
+      );
+    } else if (streak > 0) {
+      return const LinearGradient(
+        colors: [Color(0xFFEA580C), Color(0xFFF97316)],
+      );
+    }
+    return const LinearGradient(
+      colors: [Color(0xFF8B4513), Color(0xFFB87333)],
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final book = widget.book;
     final progress = book.progress.clamp(0.0, 1.0);
     final firstLetter =
     book.title.isNotEmpty ? book.title[0].toUpperCase() : '?';
 
     return GestureDetector(
-      onTap: onTap,
-      onLongPress: onDelete,
-      child: Material(
-        elevation: 7,
-        borderRadius: BorderRadius.circular(22),
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF8B4513), Color(0xFFB87333)],
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        firstLetter,
-                        style: const TextStyle(
-                          fontSize: 52,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        book.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                        const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: Colors.black12,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+      onTap: widget.onTap,
+      onLongPress: widget.onDelete,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (_, __) {
+          final glow = book.streak > 0
+              ? 6 + (_controller.value * 6)
+              : 0.0;
 
-            /// 🔥 STREAK BADGE (BACK)
-            if (book.streak > 0)
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+          return Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: book.streak > 0
+                  ? [
+                BoxShadow(
+                  color: Colors.red.withOpacity(0.35),
+                  blurRadius: glow,
+                  spreadRadius: 1,
+                )
+              ]
+                  : [],
+            ),
+            child: Material(
+              elevation: 7,
+              borderRadius: BorderRadius.circular(22),
+              child: Stack(
+                children: [
+                  Column(
                     children: [
-                      const Text('🔥', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${book.streak}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: _streakGradient(book.streak),
+                          ),
+                          child: Center(
+                            child: Text(
+                              firstLetter,
+                              style: const TextStyle(
+                                fontSize: 52,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              book.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.black12,
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
+
+                  if (book.streak > 0)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text('🔥', style: TextStyle(fontSize: 12)),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${book.streak}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
+            ),
+          );
+        },
       ),
     );
   }
