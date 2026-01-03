@@ -1,4 +1,3 @@
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -32,6 +31,15 @@ class _HomeScreenState extends State<HomeScreen> {
       books = loaded;
       isLoading = false;
     });
+  }
+
+  /// ▶ MOST READ BOOK = CONTINUE READING
+  Book? _getContinueReadingBook() {
+    final readingBooks = books.where((b) => b.lastPage > 0).toList();
+    if (readingBooks.isEmpty) return null;
+
+    readingBooks.sort((a, b) => b.lastPage.compareTo(a.lastPage));
+    return readingBooks.first;
   }
 
   Future<void> _pickPdf() async {
@@ -85,6 +93,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final continueBook = _getContinueReadingBook();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5EFE7),
       appBar: AppBar(
@@ -98,10 +108,14 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Color(0xFF3E2723),
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.public, color: Color(0xFF3E2723)),
-            onPressed: () async {
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+        children: [
+          /// 🎁 FREE BOOKS
+          _FreeBooksHeroCard(
+            onTap: () async {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -111,36 +125,53 @@ class _HomeScreenState extends State<HomeScreen> {
               await _loadBooks();
             },
           ),
+
+          /// ▶ CONTINUE READING (PREMIUM COLOR)
+          if (continueBook != null)
+            _ContinueReadingCard(
+              book: continueBook,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PdfScreen(book: continueBook),
+                  ),
+                );
+                await _loadBooks();
+              },
+            ),
+
+          /// 📚 LIBRARY
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+              itemCount: books.length,
+              gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 18,
+                mainAxisSpacing: 18,
+                childAspectRatio: 0.63,
+              ),
+              itemBuilder: (_, i) {
+                final book = books[i];
+                return _BookCard(
+                  book: book,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PdfScreen(book: book),
+                      ),
+                    );
+                    await _loadBooks();
+                  },
+                  onDelete: () => _deleteBook(book),
+                );
+              },
+            ),
+          ),
         ],
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : GridView.builder(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-        itemCount: books.length,
-        gridDelegate:
-        const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 18,
-          mainAxisSpacing: 18,
-          childAspectRatio: 0.63,
-        ),
-        itemBuilder: (_, i) {
-          final book = books[i];
-          return _BookCard(
-            book: book,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PdfScreen(book: book),
-                ),
-              );
-              await _loadBooks();
-            },
-            onDelete: () => _deleteBook(book),
-          );
-        },
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF8B4513),
@@ -151,9 +182,109 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// =======================
-/// 📘 PREMIUM BOOK CARD
-/// =======================
+/// 🎁 FREE BOOKS CARD
+class _FreeBooksHeroCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _FreeBooksHeroCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+            ),
+          ),
+          child: Row(
+            children: const [
+              Icon(Icons.auto_stories, color: Colors.white, size: 34),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Free Books • Hand-picked',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios,
+                  color: Colors.white70, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ▶ CONTINUE READING (SEPARATE PREMIUM)
+class _ContinueReadingCard extends StatelessWidget {
+  final Book book;
+  final VoidCallback onTap;
+
+  const _ContinueReadingCard({
+    required this.book,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = book.progress.clamp(0.0, 1.0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF065F46), Color(0xFF10B981)],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Continue Reading',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                book.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.white24,
+                valueColor:
+                const AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 📘 BOOK CARD (WITH STREAK BADGE)
 class _BookCard extends StatelessWidget {
   final Book book;
   final VoidCallback onTap;
@@ -176,119 +307,83 @@ class _BookCard extends StatelessWidget {
       onLongPress: onDelete,
       child: Material(
         elevation: 7,
-        shadowColor: Colors.black.withOpacity(0.14),
         borderRadius: BorderRadius.circular(22),
-        color: Colors.white,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  /// COVER
-                  Container(
-                    height: 150,
-                    width: double.infinity,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF8B4513),
-                          Color(0xFFB87333),
-                        ],
+                        colors: [Color(0xFF8B4513), Color(0xFFB87333)],
                       ),
                     ),
                     child: Center(
                       child: Text(
                         firstLetter,
                         style: const TextStyle(
-                          fontSize: 54,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 52,
                           color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ),
-
-                  /// INFO
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          book.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF3E2723),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-
-                        /// PROGRESS BAR
-                        SizedBox(
-                          height: 4,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.black12,
-                              valueColor:
-                              const AlwaysStoppedAnimation<Color>(
-                                Color(0xFFF59E0B),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              /// 🔥 STREAK BADGE (RESTORED)
-              if (book.streak > 0)
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('🔥', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${book.streak}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                        const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.black12,
+                      ),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ],
+            ),
+
+            /// 🔥 STREAK BADGE (BACK)
+            if (book.streak > 0)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('🔥', style: TextStyle(fontSize: 12)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${book.streak}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
