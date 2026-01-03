@@ -14,6 +14,8 @@ class FreeBooksScreen extends StatefulWidget {
 
 class _FreeBooksScreenState extends State<FreeBooksScreen> {
   List<Map<String, dynamic>> serverBooks = [];
+  Set<String> downloadedIds = {};
+  String? loadingBookId;
   bool loading = true;
 
   @override
@@ -22,14 +24,17 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
     _loadBooks();
   }
 
-  /// 📡 Load books dynamically from server
+  /// 📡 Load books + local downloaded state
   Future<void> _loadBooks() async {
     try {
       final data = await FreeBooksService.fetchBooks();
+      final localBooks = await BookStorage.load();
+
       if (!mounted) return;
 
       setState(() {
         serverBooks = data;
+        downloadedIds = localBooks.map((b) => b.id).toSet();
         loading = false;
       });
     } catch (_) {
@@ -38,8 +43,12 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
     }
   }
 
-  /// ⬇️ Download → save → open (UNCHANGED CORE)
+  /// ⬇️ Download → save → open (with UI feedback)
   Future<void> _openBook(Map<String, dynamic> data) async {
+    final id = data['id'];
+
+    setState(() => loadingBookId = id);
+
     try {
       final Book downloaded = await FreeBooksService.downloadBook(data);
 
@@ -52,9 +61,15 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
       }
 
       final freshBooks = await BookStorage.load();
-      final book = freshBooks.firstWhere((b) => b.id == downloaded.id);
+      final book =
+      freshBooks.firstWhere((b) => b.id == downloaded.id);
 
       if (!mounted) return;
+
+      setState(() {
+        downloadedIds.add(downloaded.id);
+        loadingBookId = null;
+      });
 
       await Navigator.push(
         context,
@@ -64,6 +79,9 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
       );
     } catch (_) {
       if (!mounted) return;
+
+      setState(() => loadingBookId = null);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to open book')),
       );
@@ -73,142 +91,98 @@ class _FreeBooksScreenState extends State<FreeBooksScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6FA),
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.black,
         title: const Text('Free Books'),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : serverBooks.isEmpty
-          ? _emptyState()
-          : Column(
-        children: [
-          _header(),
-          Expanded(child: _booksList()),
-        ],
-      ),
-    );
-  }
-
-  /// 🌈 Header section
-  Widget _header() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF6A5AE0),
-            Color(0xFF9D8CFF),
-          ],
+          ? const Center(
+        child: Text(
+          'No free books available',
+          style: TextStyle(fontSize: 16),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
+      )
+          : ListView.separated(
+        itemCount: serverBooks.length,
+        separatorBuilder: (_, __) =>
+        const Divider(height: 1),
+        itemBuilder: (_, i) {
+          final book = serverBooks[i];
+          final id = book['id'];
+          final isDownloaded = downloadedIds.contains(id);
+          final isLoading = loadingBookId == id;
+
+          return _AnimatedFreeBookTile(
+            title: book['title'] ?? 'Untitled',
+            isDownloaded: isDownloaded,
+            isLoading: isLoading,
+            onTap: () => _openBook(book),
+          );
+        },
       ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Free Books',
+    );
+  }
+}
+
+/// ===============================
+/// 🎯 Animated Free Book Tile
+/// ===============================
+class _AnimatedFreeBookTile extends StatefulWidget {
+  final String title;
+  final bool isDownloaded;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _AnimatedFreeBookTile({
+    required this.title,
+    required this.isDownloaded,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  State<_AnimatedFreeBookTile> createState() =>
+      _AnimatedFreeBookTileState();
+}
+
+class _AnimatedFreeBookTileState
+    extends State<_AnimatedFreeBookTile> {
+  bool pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => pressed = true),
+      onTapUp: (_) => setState(() => pressed = false),
+      onTapCancel: () => setState(() => pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: ListTile(
+          leading: widget.isDownloaded
+              ? const Icon(Icons.check_circle,
+              color: Colors.green)
+              : const Icon(Icons.cloud_download_outlined),
+          title: Text(widget.title),
+          subtitle: widget.isDownloaded
+              ? const Text(
+            'Downloaded',
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+              color: Colors.green,
+              fontWeight: FontWeight.w600,
             ),
-          ),
-          SizedBox(height: 6),
-          Text(
-            'Download and read instantly',
-            style: TextStyle(color: Colors.white70),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 📚 Book list
-  Widget _booksList() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: serverBooks.length,
-      itemBuilder: (_, i) {
-        final book = serverBooks[i];
-
-        return GestureDetector(
-          onTap: () => _openBook(book),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 14),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  height: 52,
-                  width: 52,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFEEEAFE),
-                  ),
-                  child: const Icon(
-                    Icons.cloud_download_outlined,
-                    color: Color(0xFF6A5AE0),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    book['title'] ?? 'Untitled',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  color: Colors.grey,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 💤 Empty state
-  Widget _emptyState() {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.menu_book_outlined, size: 64, color: Colors.grey),
-          SizedBox(height: 12),
-          Text(
-            'No free books available',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-        ],
+          )
+              : null,
+          trailing: widget.isLoading
+              ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+              : const Icon(Icons.chevron_right),
+        ),
       ),
     );
   }
