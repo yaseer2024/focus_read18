@@ -7,7 +7,12 @@ import 'services/api_config.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await ApiConfig.load(); // 🔥 LOAD SERVER CONFIG FIRST
+  // 🔥 DO NOT BLOCK APP STARTUP ON NETWORK
+  try {
+    await ApiConfig.load();
+  } catch (e) {
+    debugPrint("⚠️ Server offline. App starting in offline mode.");
+  }
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
