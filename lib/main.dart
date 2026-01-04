@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart'; // ✅ ADD THIS
 import 'services/api_config.dart';
 
 void main() async {
@@ -38,7 +39,9 @@ class FocusReadApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const HomeScreen(),
+
+      // 🔥 ONLY CHANGE: Splash → Home handled internally
+      home: const SplashScreen(),
     );
   }
 }
